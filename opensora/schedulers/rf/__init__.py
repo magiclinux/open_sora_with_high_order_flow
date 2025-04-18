@@ -4,7 +4,7 @@ from tqdm import tqdm
 from opensora.registry import SCHEDULERS
 
 from .rectified_flow import RFlowScheduler, timestep_transform
-
+from .rectified_flow_second_order import RFlowScheduler_Second_Order
 
 @SCHEDULERS.register_module("rflow")
 class RFLOW:
@@ -15,6 +15,8 @@ class RFLOW:
         cfg_scale=4.0,
         use_discrete_timesteps=False,
         use_timestep_transform=False,
+        use_second_order=False,
+        second_order_model=None,
         **kwargs,
     ):
         self.num_sampling_steps = num_sampling_steps
@@ -22,15 +24,24 @@ class RFLOW:
         self.cfg_scale = cfg_scale
         self.use_discrete_timesteps = use_discrete_timesteps
         self.use_timestep_transform = use_timestep_transform
-
-        self.scheduler = RFlowScheduler(
-            num_timesteps=num_timesteps,
-            num_sampling_steps=num_sampling_steps,
-            use_discrete_timesteps=use_discrete_timesteps,
-            use_timestep_transform=use_timestep_transform,
-            **kwargs,
-        )
-
+        self.use_second_order = use_second_order
+        if self.use_second_order:
+            self.scheduler = RFlowScheduler_Second_Order(
+                num_timesteps=num_timesteps,
+                num_sampling_steps=num_sampling_steps,
+                use_discrete_timesteps=use_discrete_timesteps,
+                use_timestep_transform=use_timestep_transform,
+                **kwargs,
+            )
+            print('Use second order......')
+        else:
+            self.scheduler = RFlowScheduler(
+                num_timesteps=num_timesteps,
+                num_sampling_steps=num_sampling_steps,
+                use_discrete_timesteps=use_discrete_timesteps,
+                use_timestep_transform=use_timestep_transform,
+                **kwargs,
+            )
     def sample(
         self,
         model,
@@ -101,3 +112,6 @@ class RFLOW:
 
     def training_losses(self, model, x_start, model_kwargs=None, noise=None, mask=None, weights=None, t=None):
         return self.scheduler.training_losses(model, x_start, model_kwargs, noise, mask, weights, t)
+
+    def training_losses_second_order(self, model, second_order_model, x_start, model_kwargs=None, noise=None, mask=None, weights=None, t=None):
+        return self.scheduler.training_losses_second_order(model, second_order_model, x_start, model_kwargs, noise, mask, weights, t)

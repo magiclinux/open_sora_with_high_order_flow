@@ -9,11 +9,11 @@ import torch.distributed as dist
 from colossalai.cluster import DistCoordinator, ProcessGroupMesh
 from colossalai.shardformer import ShardConfig, ShardFormer
 from colossalai.utils import get_current_device, set_seed
-from llava.constants import DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX
-from llava.conversation import conv_templates
-from llava.mm_utils import get_model_name_from_path, process_images, tokenizer_image_token
-from llava.model.builder import load_pretrained_model
-from llava.utils import disable_torch_init
+from tools.caption.llava.constants import DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX
+from tools.caption.llava.conversation import conv_templates
+from tools.caption.llava.mm_utils import get_model_name_from_path, process_images, tokenizer_image_token
+from tools.caption.llava.model.builder import load_pretrained_model
+from tools.caption.llava.utils import disable_torch_init
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 

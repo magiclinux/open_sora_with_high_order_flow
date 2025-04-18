@@ -78,6 +78,8 @@ def main():
         sp_size=cfg.get("sp_size", 1),
     )
     booster = Booster(plugin=plugin)
+    if cfg.get("use_second_order", True):
+        booster_second_order = Booster(plugin=plugin)
     torch.set_num_threads(1)
 
     # ======================================================
@@ -161,16 +163,47 @@ def main():
 
     # == setup loss function, build scheduler ==
     scheduler = build_module(cfg.scheduler, SCHEDULERS)
+    if cfg.get("use_second_order", True):
+        second_order_model = (
+            build_module(
+                cfg.model,
+                MODELS,
+                input_size=latent_size,
+                in_channels=vae_out_channels,
+                caption_channels=text_encoder_output_dim,
+                model_max_length=text_encoder_model_max_length,
+                enable_sequence_parallelism=cfg.get("sp_size", 1) > 1,
+            )
+            .to(device, dtype)
+            .train()
+        )
+        model_numel, model_numel_trainable = get_model_numel(second_order_model)
+        logger.info(
+            "[Second_order_model] Trainable model params: %s, Total model params: %s",
+            format_numel_str(model_numel_trainable),
+            format_numel_str(model_numel),
+        )
 
     # == setup optimizer ==
-    optimizer = HybridAdam(
-        filter(lambda p: p.requires_grad, model.parameters()),
-        adamw_mode=True,
-        lr=cfg.get("lr", 1e-4),
-        weight_decay=cfg.get("weight_decay", 0),
-        eps=cfg.get("adam_eps", 1e-8),
-    )
-
+    if cfg.get("use_second_order", True):
+        # Combine parameters from both models for the optimizer
+        combined_params = list(filter(lambda p: p.requires_grad, model.parameters())) + \
+                          list(filter(lambda p: p.requires_grad, second_order_model.parameters()))
+        optimizer = HybridAdam(
+            combined_params,
+            adamw_mode=True,
+            lr=cfg.get("lr", 1e-4),
+            weight_decay=cfg.get("weight_decay", 0),
+            eps=cfg.get("adam_eps", 1e-8),
+        )
+    else:
+        optimizer = HybridAdam(
+            filter(lambda p: p.requires_grad, model.parameters()),
+            adamw_mode=True,
+            lr=cfg.get("lr", 1e-4),
+            weight_decay=cfg.get("weight_decay", 0),
+            eps=cfg.get("adam_eps", 1e-8),
+        )
     warmup_steps = cfg.get("warmup_steps", None)
 
     if warmup_steps is None:
@@ -285,20 +318,36 @@ def main():
 
                 # == diffusion loss computation ==
                 with Timer("diffusion") as loss_t:
-                    loss_dict = scheduler.training_losses(model, x, model_args, mask=mask)
+                    if cfg.get("use_second_order", True):
+                        loss_dict = scheduler.training_losses_second_order(model, second_order_model, x, model_args, mask=mask)
+                    else:
+                        loss_dict = scheduler.training_losses(model, x, model_args, mask=mask)
                     coordinator.block_all()
                 timer_list.append(loss_t)
 
                 # == backward & update ==
                 with Timer("backward") as backward_t:
-                    loss = loss_dict["loss"].mean()
-                    booster.backward(loss=loss, optimizer=optimizer)
-                    optimizer.step()
-                    optimizer.zero_grad()
+                    if cfg.get("use_second_order", True):
+                        loss_first_order = loss_dict["loss_first_order"].mean()
+                        loss_second_order = loss_dict["loss_second_order"].mean()
+                        loss = loss_dict["loss"].mean()
+                        booster.backward(loss=loss, optimizer=optimizer)
+                        optimizer.step()
+                        optimizer.zero_grad()
+                        
+                         # update learning rate
+                        if lr_scheduler is not None:
+                            lr_scheduler.step()
+                    else:
+                        loss = loss_dict["loss"].mean()
+                        booster.backward(loss=loss, optimizer=optimizer)
+                        optimizer.step()
+                        optimizer.zero_grad()
 
-                    # update learning rate
-                    if lr_scheduler is not None:
-                        lr_scheduler.step()
+                        # update learning rate
+                        if lr_scheduler is not None:
+                            lr_scheduler.step()
+                    
                     coordinator.block_all()
                 timer_list.append(backward_t)
 
@@ -333,6 +382,8 @@ def main():
                                 "acc_step": acc_step,
                                 "epoch": epoch,
                                 "loss": loss.item(),
+                                "loss_first_order": loss_first_order.item(),
+                                "loss_second_order": loss_second_order.item(),
                                 "avg_loss": avg_loss,
                                 "lr": optimizer.param_groups[0]["lr"],
                                 "debug/move_data_time": move_data_t.elapsed_time,

@@ -457,6 +457,17 @@ def STDiT3_XL_2(from_pretrained=None, **kwargs):
     return model
 
 
+@MODELS.register_module("STDiT3-T/2")
+def STDiT3_XL_2(from_pretrained=None, **kwargs):
+    if from_pretrained is not None and not os.path.isdir(from_pretrained):
+        model = STDiT3.from_pretrained(from_pretrained, **kwargs)
+    else:
+        config = STDiT3Config(depth=3, hidden_size=1152//2, patch_size=(1, 2, 2), num_heads=2, mlp_ratio=2.0,**kwargs)
+        model = STDiT3(config)
+        if from_pretrained is not None:
+            load_checkpoint(model, from_pretrained)
+    return model
+
 @MODELS.register_module("STDiT3-3B/2")
 def STDiT3_3B_2(from_pretrained=None, **kwargs):
     # check if from_pretrained is a path

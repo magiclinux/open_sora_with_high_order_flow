@@ -148,7 +148,7 @@ def main():
     # build model
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = AestheticScorer(768, device)
-    model.mlp.load_state_dict(torch.load("pretrained_models/aesthetic.pth", map_location=device))
+    model.mlp.load_state_dict(torch.load("/home/mzh1800/Open-Sora/tools/scoring/pretrained_models/aesthetic.pth", map_location=device))
     preprocess = model.preprocess
 
     # build dataset
